@@ -1,0 +1,25 @@
+Run started: Sat Feb 14 18:56:38 2026
+MODEL=knn  FEATURE=hog
+Loading + extracting features...
+Train shape: (2297, 8100) | Val shape: (573, 8100)
+Train label counts: [661 658 662 316]
+Val label counts:   [165 164 165  79]
+Feature extraction time: 31.40s
+Running GridSearchCV...
+GridSearch best params (CV): {'knn__metric': 'minkowski', 'knn__n_neighbors': 3, 'knn__p': 1, 'knn__weights': 'distance'}
+GridSearch best CV macro-F1: 0.857382
+GridSearch time: 752.01s
+Saved results: gridsearch_results.csv
+Saved results: top5_cv_candidates_scored_on_val.csv
+Top candidates by VAL macro-F1:
+   val_f1_macro  ...                                             params
+3      0.916247  ...  {'knn__metric': 'euclidean', 'knn__n_neighbors...
+4      0.916247  ...  {'knn__metric': 'minkowski', 'knn__n_neighbors...
+0      0.912449  ...  {'knn__metric': 'minkowski', 'knn__n_neighbors...
+1      0.912449  ...  {'knn__metric': 'manhattan', 'knn__n_neighbors...
+2      0.912449  ...  {'knn__metric': 'manhattan', 'knn__n_neighbors...
+
+[5 rows x 5 columns]
+Saved model: outputs/knn/hog/model/knn_final.pkl
+Saved metrics: outputs/knn/hog/results/metrics.json
+Done

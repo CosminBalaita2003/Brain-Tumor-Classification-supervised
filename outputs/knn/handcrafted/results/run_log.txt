@@ -1,0 +1,25 @@
+Run started: Sat Feb 14 19:14:58 2026
+MODEL=knn  FEATURE=handcrafted
+Loading + extracting features...
+Train shape: (2297, 94) | Val shape: (573, 94)
+Train label counts: [661 658 662 316]
+Val label counts:   [165 164 165  79]
+Feature extraction time: 36.02s
+Running GridSearchCV...
+GridSearch best params (CV): {'knn__metric': 'minkowski', 'knn__n_neighbors': 3, 'knn__p': 2, 'knn__weights': 'distance'}
+GridSearch best CV macro-F1: 0.740059
+GridSearch time: 12.44s
+Saved results: gridsearch_results.csv
+Saved results: top5_cv_candidates_scored_on_val.csv
+Top candidates by VAL macro-F1:
+   val_f1_macro  ...                                             params
+0      0.802784  ...  {'knn__metric': 'minkowski', 'knn__n_neighbors...
+1      0.802784  ...  {'knn__metric': 'euclidean', 'knn__n_neighbors...
+2      0.802784  ...  {'knn__metric': 'euclidean', 'knn__n_neighbors...
+3      0.797705  ...  {'knn__metric': 'minkowski', 'knn__n_neighbors...
+4      0.797705  ...  {'knn__metric': 'euclidean', 'knn__n_neighbors...
+
+[5 rows x 5 columns]
+Saved model: outputs/knn/handcrafted/model/knn_final.pkl
+Saved metrics: outputs/knn/handcrafted/results/metrics.json
+Done
