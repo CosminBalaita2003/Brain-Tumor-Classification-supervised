@@ -1,170 +1,79 @@
-# Brain Tumor Classification using Handcrafted and HOG Features
+# Brain Tumor Classification (Supervised)
 
-## Overview
+This project performs binary MRI classification: `tumor` versus `not_tumor`.
+Glioma, meningioma, and pituitary images map to `tumor`; no-tumor images map to
+`not_tumor`. It compares Random Forest, LightGBM, and a Logistic Regression baseline using handcrafted
+intensity/texture, HOG, or multi-scale wavelet features.
 
-This project implements a supervised machine learning pipeline for multi-class brain tumor image classification. The objective is to classify MRI images into four categories using classical machine learning models and two different feature representations.
+## Setup
 
-The project follows a complete ML workflow:
-- Dataset preparation
-- Feature extraction
-- Model training
-- Hyperparameter tuning
-- Evaluation on validation and test sets
-- Performance visualization
+Python 3.10 or newer is recommended.
 
----
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
 
-## Dataset
+The original data is stored under `archive/Training/<class>/` and
+`archive/Testing/<class>/`. Create fresh train/validation/test manifests with:
 
-The dataset contains MRI brain images grouped into four classes:
-- Glioma
-- Meningioma
-- Pituitary
-- No Tumor
+```bash
+python prepare_dataset.py
+```
 
-The original dataset is split into:
-- Training set
-- Validation set (created from training using stratified split)
-- Test set (used only for final evaluation)
+The script deduplicates each original partition and splits `archive/Training`
+into seeded, stratified 80/20 train/validation sets. `archive/Testing` remains the
+independent test set. If image content occurs in both original partitions, it is
+kept only in test. The script writes `train.csv`, `val.csv`, and `test.csv`;
+images remain in `archive` and are never copied, moved, or overwritten. Running
+the script again safely regenerates the same manifests.
 
-Stratified splitting is used to preserve class distribution across subsets.
+## Training
 
----
+```bash
+# Random Forest; runs handcrafted and wavelet experiments
+python random_forest.py
 
-## Feature Extraction
+# LightGBM; runs handcrafted and wavelet experiments
+python lightgbm_model.py
 
-Two different feature representations are implemented.
+# Linear supervised baseline; runs handcrafted and wavelet experiments
+python logistic_regression.py
 
-### 1. Handcrafted Features
+```
 
-This representation combines:
+Each command runs a parameter grid search only on the training set with stratified cross-validation,
+reports validation and final test metrics, and writes the fitted model, full search
+table, metrics JSON, confusion matrices, and per-parameter performance plots under
+`outputs/<model>/<features>/`.
 
-- Global intensity statistics (mean, standard deviation, skewness, kurtosis)
-- Intensity histogram
-- Local Binary Patterns (LBP)
-- Gray Level Co-occurrence Matrix (GLCM) texture properties
+The primary selection metric is macro F1. Accuracy and balanced accuracy are
+also reported. All model files run without arguments and evaluate both feature
+representations in sequence. Experiment settings such as `FEATURE_NAMES`,
+`CV_FOLDS`, and `SEARCH_JOBS` are constants near the top of each model file.
+`SEARCH_JOBS=4` runs four CV fits concurrently
+on the M4 CPU. The test set is loaded only after cross-validation has selected
+the final model.
 
-These features capture intensity distribution and texture patterns.
+During tuning, each model displays a dependency-free progress bar for all CV fits,
+for example `Random Forest CV: 73/120` or `LightGBM CV: 156/240`.
 
-### 2. HOG Features (Histogram of Oriented Gradients)
+## Files
 
-HOG extracts structural and edge-based information by:
-- Computing image gradients
-- Building orientation histograms in local regions
-- Normalizing feature blocks
+- `prepare_dataset.py`: duplicate-safe, reproducible train/validation/test manifests
+- `feature_extraction_handcrafted.py`: intensity histogram, LBP, and GLCM features
+- `feature_extraction_hog.py`: HOG features
+- `feature_extraction_wavelet.py`: multi-scale wavelet sub-band statistics
+- `training_utils.py`: shared validation, loading, metrics, and plotting
+- `random_forest.py`: grid-searched Random Forest tuning and evaluation
+- `lightgbm_model.py`: grid-searched LightGBM tuning and evaluation
+- `logistic_regression.py`: scaled, grid-searched linear baseline
+- `CHANGELOG.md`: detailed record and rationale for all modifications
 
-This representation focuses on shape and contour information.
+## Reproducibility notes
 
----
-
-## Models
-
-Two supervised learning models are implemented.
-
-### 1. k-Nearest Neighbors (kNN)
-
-- Distance-based classifier
-- Uses Minkowski distance (Euclidean or Manhattan)
-- Supports uniform and distance-based weighting
-- Requires feature scaling
-
-### 2. Random Forest
-
-- Ensemble of decision trees
-- Uses Gini impurity for splitting
-- Includes built-in regularization through:
-  - Maximum depth
-  - Minimum samples per split
-  - Minimum samples per leaf
-- Reduces overfitting via bagging and random feature selection
-
----
-
-## Hyperparameter Tuning
-
-Hyperparameters are optimized using GridSearchCV with Stratified K-Fold cross-validation.
-
-Examples of tuned parameters:
-
-kNN:
-- Number of neighbors
-- Distance metric
-- Weighting scheme
-- Minkowski power parameter
-
-Random Forest:
-- Number of trees
-- Maximum depth
-- Minimum samples split
-- Minimum samples leaf
-- Maximum features
-
-Model selection is based on validation performance.
-
----
-
-## Evaluation Metrics
-
-The following metrics are computed:
-
-- Accuracy
-- Macro F1-score
-- Balanced accuracy
-- Confusion matrix
-
-Macro F1 is used to give equal importance to each class.
-
-Balanced accuracy compensates for possible class imbalance.
-
----
-
-## Visualizations
-
-The project generates multiple plots:
-
-- Validation macro F1 vs number of neighbors (kNN)
-- Cross-validation score vs max depth (Random Forest)
-- Cross-validation score vs number of estimators (Random Forest)
-- Confusion matrices for validation and test sets
-
-These plots help analyze:
-- Overfitting vs underfitting behavior
-- Model stability
-- Hyperparameter sensitivity
-
----
-
-## Project Structure
-- prepare_dataset.py
-- feature_extraction_handcrafted.py
-- feature_extraction_hog.py
-- knn.py
-- random_forest.py
-- outputs/
-
-
-- `prepare_dataset.py` handles data splitting.
-- Feature extraction files compute image representations.
-- Model files train, tune, evaluate and save results.
-- Outputs contain plots, confusion matrices and result summaries.
-
----
-
-## Experimental Setup
-
-All experiments:
-- Use fixed random seeds for reproducibility
-- Perform hyperparameter tuning only on training data
-- Use validation set for model selection
-- Evaluate final performance on unseen test data
-
----
-
-## Conclusion
-
-The project demonstrates a complete classical machine learning pipeline for medical image classification. It compares:
-
-- Two feature representations
-- Two supervised models
-
-The comparison is performed using consistent evaluation methodology and cross-validation, ensuring fair and reproducible results.
+All random operations use seed 42. Exact duplicate content is assigned only once,
+so it cannot cross train, validation, or test boundaries. Neither validation nor
+test is used to choose among cross-validation candidates. Dependencies use
+portable version ranges rather than machine-specific local package paths.

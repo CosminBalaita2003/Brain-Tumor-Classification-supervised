@@ -1,6 +1,0 @@
-params,cv_mean_f1_macro,val_f1_macro,val_balanced_acc,val_acc
-"{'knn__metric': 'minkowski', 'knn__n_neighbors': 3, 'knn__p': 2, 'knn__weights': 'distance'}",0.7400586880912811,0.8027841728101873,0.7958656104109947,0.7958115183246073
-"{'knn__metric': 'euclidean', 'knn__n_neighbors': 3, 'knn__p': 2, 'knn__weights': 'distance'}",0.7400586880912811,0.8027841728101873,0.7958656104109947,0.7958115183246073
-"{'knn__metric': 'euclidean', 'knn__n_neighbors': 3, 'knn__p': 1, 'knn__weights': 'distance'}",0.7400586880912811,0.8027841728101873,0.7958656104109947,0.7958115183246073
-"{'knn__metric': 'minkowski', 'knn__n_neighbors': 5, 'knn__p': 2, 'knn__weights': 'distance'}",0.735930062472975,0.7977054764075484,0.7896337955036627,0.7905759162303665
-"{'knn__metric': 'euclidean', 'knn__n_neighbors': 5, 'knn__p': 2, 'knn__weights': 'distance'}",0.735930062472975,0.7977054764075484,0.7896337955036627,0.7905759162303665

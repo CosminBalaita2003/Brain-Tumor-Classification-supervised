@@ -1,147 +1,140 @@
-from pathlib import Path
-import shutil
-import random
+
 import csv
+import hashlib
+import random
+from collections import Counter
+from pathlib import Path
 
-
-DATASET_ROOT = Path("Dataset")
-TRAIN_DIR_NAME = "Training"
-TEST_DIR_NAME  = "Testing"
-
-OUT_ROOT = Path("dataset_brain_tumor")
-OUT_TRAIN_DIR = OUT_ROOT / "train_images"
-OUT_VAL_DIR   = OUT_ROOT / "val_images"
-OUT_TEST_DIR  = OUT_ROOT / "test_images"
-
-TRAIN_CSV = OUT_ROOT / "train.csv"
-VAL_CSV   = OUT_ROOT / "val.csv"
-TEST_CSV  = OUT_ROOT / "test.csv"
+PROJECT_ROOT = Path(__file__).resolve().parent
+SOURCE_ROOT = PROJECT_ROOT / "archive"
+OUTPUT_ROOT = PROJECT_ROOT / "dataset_brain_tumor"
+TRAIN_CSV = OUTPUT_ROOT / "train.csv"
+VAL_CSV = OUTPUT_ROOT / "val.csv"
+TEST_CSV = OUTPUT_ROOT / "test.csv"
 
 VAL_RATIO = 0.2
 SEED = 42
-COPY_FILES = True  
-
-CLASSES = [
-    "glioma_tumor",      
-    "meningioma_tumor",
-    "pituitary_tumor",
-    "no_tumor"
-]
-
-CLASS_TO_LABEL = {cls: i for i, cls in enumerate(CLASSES)}
-
-IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
-
-
-def safe_mkdir(p: Path):
-    p.mkdir(parents=True, exist_ok=True)
+CLASSES = ("glioma_tumor", "meningioma_tumor", "pituitary_tumor", "no_tumor")
+SOURCE_TO_TARGET = {
+    "glioma_tumor": (1, "tumor"),
+    "meningioma_tumor": (1, "tumor"),
+    "pituitary_tumor": (1, "tumor"),
+    "no_tumor": (0, "not_tumor"),
+}
+TARGET_CLASSES = ("not_tumor", "tumor")
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 
 
 def list_images(folder: Path):
-    return [p for p in folder.rglob("*") if p.is_file() and p.suffix.lower() in IMG_EXTS]
+    return sorted(
+        path for path in folder.rglob("*")
+        if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+    )
 
 
-def unique_name(target_dir: Path, filename: str) -> str:
+def collect_partition(partition: str, reserved_hashes=None):
+    reserved_hashes = reserved_hashes or {}
+    unique_by_hash = {}
+    duplicates_removed = 0
+    reserved_removed = 0
 
-    base = Path(filename).stem
-    ext = Path(filename).suffix
-    candidate = filename
-    k = 1
-    while (target_dir / candidate).exists():
-        candidate = f"{base}_{k}{ext}"
-        k += 1
-    return candidate
+    for class_name in CLASSES:
+        class_dir = SOURCE_ROOT / partition / class_name
+        if not class_dir.is_dir():
+            raise FileNotFoundError(f"Missing class directory: {class_dir}")
+        images = list_images(class_dir)
+        if not images:
+            raise ValueError(f"No supported images found in: {class_dir}")
+
+        label, target_name = SOURCE_TO_TARGET[class_name]
+        for image_path in images:
+            digest = hashlib.sha256(image_path.read_bytes()).digest()
+            reserved = reserved_hashes.get(digest)
+            if reserved is not None:
+                if reserved[1] != label:
+                    raise ValueError(
+                        "Identical image content has conflicting labels: "
+                        f"{reserved[0]} and {image_path}"
+                    )
+                reserved_removed += 1
+                continue
+            previous = unique_by_hash.get(digest)
+            if previous is not None:
+                if previous[1] != label:
+                    raise ValueError(
+                        "Identical image content has conflicting labels: "
+                        f"{previous[0]} and {image_path}"
+                    )
+                duplicates_removed += 1
+                continue
+            unique_by_hash[digest] = (image_path, label, target_name)
+
+    return unique_by_hash, duplicates_removed, reserved_removed
 
 
-def copy_or_move(src: Path, dst: Path, copy_files: bool):
-    if copy_files:
-        shutil.copy2(src, dst)
-    else:
-        shutil.move(str(src), str(dst))
+def stratified_split(records):
+    rng = random.Random(SEED)
+    train_rows, val_rows = [], []
+
+    for class_name in TARGET_CLASSES:
+        label = TARGET_CLASSES.index(class_name)
+        class_records = sorted(
+            (record for record in records if record[1] == label),
+            key=lambda record: str(record[0]),
+        )
+        if len(class_records) < 2:
+            raise ValueError(f"At least two unique images are required for {class_name}")
+        rng.shuffle(class_records)
+        validation_count = min(
+            len(class_records) - 1,
+            max(1, round(len(class_records) * VAL_RATIO)),
+        )
+        val_rows.extend(class_records[:validation_count])
+        train_rows.extend(class_records[validation_count:])
+
+    rng.shuffle(train_rows)
+    rng.shuffle(val_rows)
+    return train_rows, val_rows
 
 
-def write_csv(rows, csv_path: Path):
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(["image", "label"])
-        w.writerows(rows)
+def write_manifest(records, destination: Path):
+    temporary = destination.with_suffix(".csv.tmp")
+    with temporary.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow(("image", "label", "class_name"))
+        for image_path, label, class_name in records:
+            writer.writerow((image_path.relative_to(PROJECT_ROOT), label, class_name))
+    temporary.replace(destination)
 
 
 def main():
-    random.seed(SEED)
+    test_by_hash, test_duplicates, _ = collect_partition("Testing")
+    training_by_hash, training_duplicates, cross_partition_removed = collect_partition(
+        "Training", reserved_hashes=test_by_hash
+    )
+    train_rows, val_rows = stratified_split(list(training_by_hash.values()))
+    test_rows = list(test_by_hash.values())
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    write_manifest(train_rows, TRAIN_CSV)
+    write_manifest(val_rows, VAL_CSV)
+    write_manifest(test_rows, TEST_CSV)
 
-    train_root = DATASET_ROOT / TRAIN_DIR_NAME
-    test_root  = DATASET_ROOT / TEST_DIR_NAME
-
-    safe_mkdir(OUT_TRAIN_DIR)
-    safe_mkdir(OUT_VAL_DIR)
-    safe_mkdir(OUT_TEST_DIR)
-    safe_mkdir(OUT_ROOT)
-
-
-    train_rows = []
-    val_rows = []
-
-    for cls in CLASSES:
-        cls_dir = train_root / cls
-        if not cls_dir.exists():
-            raise FileNotFoundError(f"No folder found: {cls_dir}")
-
-        imgs = list_images(cls_dir)
-        if len(imgs) == 0:
-            raise ValueError(f"img not found: {cls_dir}")
-
-        random.shuffle(imgs)
-        n_val = int(round(len(imgs) * VAL_RATIO))
-        val_imgs = imgs[:n_val]
-        train_imgs = imgs[n_val:]
-
-        label = CLASS_TO_LABEL[cls]
-
-        # train split
-        for src in train_imgs:
-            new_name = f"{src.stem}_{cls}{src.suffix.lower()}"
-            new_name = unique_name(OUT_TRAIN_DIR, new_name)
-            dst = OUT_TRAIN_DIR / new_name
-            copy_or_move(src, dst, COPY_FILES)
-            train_rows.append([new_name, label])
-
-        # val split
-        for src in val_imgs:
-            new_name = f"{src.stem}_{cls}{src.suffix.lower()}"
-            new_name = unique_name(OUT_VAL_DIR, new_name)
-            dst = OUT_VAL_DIR / new_name
-            copy_or_move(src, dst, COPY_FILES)
-            val_rows.append([new_name, label])
-
-    write_csv(train_rows, TRAIN_CSV)
-    write_csv(val_rows, VAL_CSV)
-
-
-    test_rows = []
-
-    for cls in CLASSES:
-        cls_dir = test_root / cls
-        if not cls_dir.exists():
-            raise FileNotFoundError(f"No folder found: {cls_dir}")
-
-        imgs = list_images(cls_dir)
-        label = CLASS_TO_LABEL[cls]
-
-        for src in imgs:
-            new_name = f"test_{src.stem}_{cls}{src.suffix.lower()}"
-            new_name = unique_name(OUT_TEST_DIR, new_name)
-            dst = OUT_TEST_DIR / new_name
-            copy_or_move(src, dst, COPY_FILES)
-            test_rows.append([new_name, label])
-
-    write_csv(test_rows, TEST_CSV)
-
-
-    print(f"- Train images: {OUT_TRAIN_DIR} | CSV: {TRAIN_CSV}")
-    print(f"- Val images:   {OUT_VAL_DIR}   | CSV: {VAL_CSV}")
-    print(f"- Test images:  {OUT_TEST_DIR}  | CSV: {TEST_CSV}")
-    print("Label mapping:", CLASS_TO_LABEL)
+    train_counts = Counter(row[2] for row in train_rows)
+    val_counts = Counter(row[2] for row in val_rows)
+    test_counts = Counter(row[2] for row in test_rows)
+    print(
+        "Duplicates removed: "
+        f"training={training_duplicates}, test={test_duplicates}, "
+        f"training images also present in test={cross_partition_removed}"
+    )
+    print(f"Training: {len(train_rows)} -> {TRAIN_CSV.relative_to(PROJECT_ROOT)}")
+    print(f"Validation: {len(val_rows)} -> {VAL_CSV.relative_to(PROJECT_ROOT)}")
+    print(f"Test: {len(test_rows)} -> {TEST_CSV.relative_to(PROJECT_ROOT)}")
+    for class_name in TARGET_CLASSES:
+        print(
+            f"  {class_name}: train={train_counts[class_name]}, "
+            f"val={val_counts[class_name]}, test={test_counts[class_name]}"
+        )
 
 
 if __name__ == "__main__":
